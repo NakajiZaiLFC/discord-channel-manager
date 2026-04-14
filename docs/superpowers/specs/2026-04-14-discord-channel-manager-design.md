@@ -28,7 +28,7 @@ Bot を噛ませることで:
 ### MVP に含む
 
 - **対象**: 単一サーバ（`GUILD_ID` 1つ）、テキストチャンネルのみ（アーキテクチャは voice / category 拡張可能な形で実装）
-- **Slash commands**: `create`, `rename`, `move`, `delete`, `settopic`, `info`, `transfer`, `claim`, `list`
+- **Slash commands**: `create`, `rename`, `move`, `delete`, `settopic`, `transfer`, `claim`, `list`
 - **制約**: 非管理者は **1人1チャンネル**
 - **永続化**: Cloudflare D1 にオーナー台帳
 - **監査**: 専用Discordチャンネルに操作イベントを best-effort 投稿
@@ -59,7 +59,6 @@ Bot を噛ませることで:
 | `/channel move <position>` | ◯（cross-categoryは将来） | ◯（同カテゴリ内リオーダーのみ） | ✕ | 対象ch内 |
 | `/channel delete` | ◯（確認ダイアログ付） | ◯（確認ダイアログ付） | ✕ | 対象ch内 |
 | `/channel settopic <text>` | ◯ | ◯ | ✕ | 対象ch内 |
-| `/channel info` | ◯ | ◯ | ◯（ephemeral、意図: 任意ユーザーが「このchのオーナーは誰か」を照会可能。Discord上で既にメンバー表示される情報なのでプライバシー懸念なし） | 対象ch内 |
 | `/channel transfer <@user>` | ◯ | ◯（受け手の1ch制約を確認） | ✕ | 対象ch内 |
 | `/channel claim <@user>` | ◯（マイグレ用） | ✕ | ✕ | 対象ch内 |
 | `/channel list` | ◯ | ✕ | ✕ | どこでも |
@@ -119,7 +118,6 @@ src/
 │   ├── move.ts
 │   ├── delete.ts              # コマンド側: 確認ボタン表示 + nonce登録
 │   ├── settopic.ts
-│   ├── info.ts
 │   ├── transfer.ts            # 受け手の1ch制約チェック
 │   ├── claim.ts               # マイグレ完了後に削除
 │   └── list.ts                # admin専用
