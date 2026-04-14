@@ -15,5 +15,17 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.6",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4",
+    "wrangler": "^4.82.2"
+  },
+  "dependencies": {
+    "discord-api-types": "^0.38.46",
+    "zod": "^4.3.6"
   }
 }
