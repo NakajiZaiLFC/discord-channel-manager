@@ -439,3 +439,63 @@ npx tsx scripts/register-commands.ts
 - **Cloudflare Workers + D1** で恒久無料・ゼロ運用の Discord 管理 Bot を作り、非管理者の編集権限を「自分のチャンネル限定」に選択的に戻す
 - オーナー台帳は **D1**、監査ログは Discord チャンネルに **best-effort** 投稿、真実の情報源は D1 に一本化
 - **HTTP Interactions** モデルで実装し、将来「荒らしリアルタイム検知」が必要になったら Gateway 対応ホストに移植（ドメイン層は流用可能）
+
+---
+
+# 2026-04-14 スコープ改訂 (v2)
+
+実装中、スコープが過剰であると判明したため以下のとおり整理:
+
+## 新スコープ
+
+**コマンド(5種)**: `create` / `rename` / **`archive`** / `move` / `claim`(初回のみ)
+
+- **`archive` を `delete` に置き換え**: ハード削除ではなく、アーカイブカテゴリに移動 + D1 に `archived_at` 記録。**Cron Trigger** で30日経過後に自動削除。誤操作の猶予期間を確保。
+- **削除**: `settopic`, `list`, `transfer`, `info` (すべて YAGNI)
+- **削除**: 監査ログ (ログ ch への投稿、`events.ts`, `audit-log.ts`, `recovery.ts`) — Discord の Audit Log で十分
+- **削除**: 2段階削除確認ボタン、`nonces` テーブル、`component-router.ts`, `delete-confirm.ts` (archive は復旧可能なので確認不要)
+- **削除**: race 補償削除ロジック (pre-check のみで十分、個人Bot規模ではrace起きない)
+
+## 新アーキテクチャ差分
+
+**環境変数**:
+- 追加: `ARCHIVE_CATEGORY_ID` (アーカイブ先カテゴリ)
+- 追加: `ARCHIVE_RETENTION_DAYS` (削除までの日数、デフォルト 30)
+- 削除: `EVENT_LOG_CHANNEL_ID`
+
+**D1 スキーマ (v2)**:
+```sql
+CREATE TABLE channels (
+  channel_id   TEXT PRIMARY KEY,
+  owner_id     TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  archived_at  TEXT                    -- NULL = active, not NULL = archived
+);
+CREATE INDEX idx_channels_owner ON channels(owner_id);
+CREATE INDEX idx_channels_archived ON channels(archived_at);
+```
+
+`nonces` テーブル廃止。
+
+**wrangler.toml**:
+```toml
+[triggers]
+crons = ["0 3 * * *"]   # 毎日 3am UTC
+```
+
+**Worker エントリ**:
+- `fetch()` ハンドラ: 通常のインタラクション処理 (従来通り)
+- `scheduled()` ハンドラ: cron起動時に `archived_at < NOW - ARCHIVE_RETENTION_DAYS` のチャンネルを Discord API で DELETE + D1 行削除
+
+## archive コマンドの挙動
+
+- チャンネル名を `[a]-{original-name}` にリネーム
+- `parent_id` を `ARCHIVE_CATEGORY_ID` に変更
+- D1 UPDATE: `SET archived_at = NOW`
+- 復旧コマンドは MVP で作らない (管理者が手動でカテゴリ戻す)
+
+## 設計意図の変化
+
+- **真実の情報源**: 引き続き D1
+- **監査目的**: Discord 自身の Audit Log に委譲 (Bot は投稿しない)
+- **誤操作耐性**: archive + 猶予期間で担保 (2段階確認を不要にする)

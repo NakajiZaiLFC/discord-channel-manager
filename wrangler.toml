@@ -7,13 +7,17 @@ compatibility_flags = ["nodejs_compat_v2"]
 GUILD_ID = ""
 ADMIN_ROLE_IDS = ""
 PERSONAL_CHANNELS_CATEGORY_ID = ""
-EVENT_LOG_CHANNEL_ID = ""
+ARCHIVE_CATEGORY_ID = ""
+ARCHIVE_RETENTION_DAYS = "30"
 LOG_LEVEL = "info"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "discord-channel-manager"
 database_id = ""
+
+[triggers]
+crons = ["0 3 * * *"]   # 毎日 3am UTC に archive 猶予期間切れを掃除
 
 # Secrets (wrangler secret put で設定):
 #   DISCORD_TOKEN
