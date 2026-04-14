@@ -59,7 +59,7 @@ Bot を噛ませることで:
 | `/channel move <position>` | ◯（cross-categoryは将来） | ◯（同カテゴリ内リオーダーのみ） | ✕ | 対象ch内 |
 | `/channel delete` | ◯（確認ダイアログ付） | ◯（確認ダイアログ付） | ✕ | 対象ch内 |
 | `/channel settopic <text>` | ◯ | ◯ | ✕ | 対象ch内 |
-| `/channel info` | ◯ | ◯ | ◯（ephemeral） | 対象ch内 |
+| `/channel info` | ◯ | ◯ | ◯（ephemeral、意図: 任意ユーザーが「このchのオーナーは誰か」を照会可能。Discord上で既にメンバー表示される情報なのでプライバシー懸念なし） | 対象ch内 |
 | `/channel transfer <@user>` | ◯ | ◯（受け手の1ch制約を確認） | ✕ | 対象ch内 |
 | `/channel claim <@user>` | ◯（マイグレ用） | ✕ | ✕ | 対象ch内 |
 | `/channel list` | ◯ | ✕ | ✕ | どこでも |
@@ -105,7 +105,7 @@ Bot を噛ませることで:
 ```
 src/
 ├── worker.ts                  # fetch handler: 署名検証 → type分岐 → エラーバウンダリ
-├── config.ts                  # env / secrets の zod バリデーション
+├── config.ts                  # env / secrets の zod バリデーション（vars と secrets を統合したEnv型を定義）
 ├── verify.ts                  # Ed25519署名検証（WebCrypto、~30行）
 ├── discord/
 │   ├── rest.ts                # 生 fetch + Bot Token 付与の薄いラッパ
@@ -164,6 +164,8 @@ commands/rename.ts
   2. discord/rest.ts: PATCH /channels/:id {name: new-name}
      → 失敗なら ephemeral エラー応答
   3. ownership/store.ts: UPDATE channels SET last_modified_at=?
+     ※ Discord mutation 成功後に D1 更新が失敗した場合: Discord 側はロールバックしない。
+       現行では検知のみ（`console.error`）、復旧は `scripts/recovery.ts` 手動実行。
   4. ownership/audit-log.ts: ログch投稿（best effort、失敗は console.error）
   5. 成功応答
 ```
@@ -246,6 +248,8 @@ CREATE TABLE nonces (
 );
 CREATE INDEX idx_nonces_expires ON nonces(expires_at);
 ```
+
+**nonce レコードの掃除方針（MVP）**: lazy delete のみ。参照時に `expires_at <= now()` を弾き、使用済み nonce は one-shot で `DELETE`。期限切れ未使用レコードは蓄積するが、`delete-confirm` の発行頻度は低く（個人Bot規模で日あたり数件）、D1 の行数上限（無料枠 5GB）まで到達する心配は無い。将来 cron が必要になれば `wrangler.toml [triggers]` で日次 `DELETE WHERE expires_at < ...` を追加可能。
 
 ### 1人1ch制約の実現
 
@@ -354,6 +358,8 @@ npx wrangler deploy
 # → URL: https://discord-channel-manager.<subdomain>.workers.dev
 
 # 7. Slash commands を Discord に登録（ローカルで1回だけ）
+#    ギルドコマンドとして登録する（グローバル反映は最大1時間、ギルドは即時反映のため）
+#    PUT /applications/:app_id/guilds/:guild_id/commands を使う
 npx tsx scripts/register-commands.ts
 
 # 8. Discord Developer Portal で
@@ -395,6 +401,9 @@ npx tsx scripts/register-commands.ts
   - ハッピーパス
   - 権限拒否
   - race（同時 `create` 2連発で片方だけ成功する）
+- **不変条件の回帰テスト**:
+  - 署名検証失敗時に 401 を返すこと（不変条件 #1）
+  - worker.ts 未処理例外時に ephemeral error response を返すこと（不変条件 #6）
 
 ### Manual E2E
 
