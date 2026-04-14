@@ -1602,40 +1602,20 @@ git add src/worker.ts src/commands/index.ts src/components/index.ts
 git commit -m "feat: add worker entry with signature verify and type dispatch"
 ```
 
-### Task 3.5: worker 統合テスト (PING + 署名検証)
+### Task 3.5: worker 統合テスト (署名検証のネガティブパス)
 
 **Files:**
 - Create: `test/integration/worker.test.ts`
+
+**設計方針**: miniflare の env bindings は静的なため、テストランタイムに動的生成した公開鍵を env に差し込むのは困難。ここでは**ネガティブパス（署名ヘッダ欠如 / 無効署名）のみを統合テストで検証**する。正の検証（valid signature → PONG）は `test/verify.test.ts` で WebCrypto 単体テストとして既にカバー済み。PING の end-to-end は、デプロイ後に Discord が実PING送信することで自動確認される。
 
 - [ ] **Step 1: failing test を書く**
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { SELF, env } from 'cloudflare:test';
+import { SELF } from 'cloudflare:test';
 
-async function toHex(buf: ArrayBuffer): Promise<string> {
-  return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function generateKeypair() {
-  const kp = await crypto.subtle.generateKey(
-    { name: 'Ed25519' },
-    true,
-    ['sign', 'verify'],
-  ) as CryptoKeyPair;
-  const pubRaw = await crypto.subtle.exportKey('raw', kp.publicKey);
-  return { kp, publicKeyHex: await toHex(pubRaw) };
-}
-
-async function sign(kp: CryptoKeyPair, body: string, timestamp: string): Promise<string> {
-  const data = new TextEncoder().encode(timestamp + body);
-  const sig = await crypto.subtle.sign({ name: 'Ed25519' }, kp.privateKey, data);
-  return toHex(sig);
-}
-
-describe('worker fetch handler', () => {
+describe('worker fetch handler - negative paths', () => {
   it('rejects requests without signature headers (401)', async () => {
     const res = await SELF.fetch('https://example.com/', {
       method: 'POST',
@@ -1656,30 +1636,14 @@ describe('worker fetch handler', () => {
     expect(res.status).toBe(401);
   });
 
-  it('responds to PING with PONG', async () => {
-    const { kp, publicKeyHex } = await generateKeypair();
-    (env as any).DISCORD_PUBLIC_KEY = publicKeyHex;
-
-    const body = '{"type":1}';
-    const ts = '1700000000';
-    const signature = await sign(kp, body, ts);
-
-    const res = await SELF.fetch('https://example.com/', {
-      method: 'POST',
-      headers: {
-        'X-Signature-Ed25519': signature,
-        'X-Signature-Timestamp': ts,
-      },
-      body,
-    });
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data).toEqual({ type: 1 });
+  it('rejects non-POST (405)', async () => {
+    const res = await SELF.fetch('https://example.com/', { method: 'GET' });
+    expect(res.status).toBe(405);
   });
 });
 ```
 
-- [ ] **Step 2: vitest.config.ts を拡張して DISCORD_PUBLIC_KEY 等のテスト用env設定**
+- [ ] **Step 2: vitest.config.ts の miniflare bindings を拡張**
 
 `vitest.config.ts` の `miniflare` セクションに追加:
 
@@ -1695,25 +1659,21 @@ miniflare: {
     EVENT_LOG_CHANNEL_ID: '400000000000000000',
     LOG_LEVEL: 'info',
     DISCORD_TOKEN: 'test-token',
-    DISCORD_PUBLIC_KEY: 'a'.repeat(64),  // テスト実行時に差し替える
+    DISCORD_PUBLIC_KEY: 'a'.repeat(64),  // 固定値（ネガティブパスしかテストしないので任意のhex 64文字でOK）
     DISCORD_APPLICATION_ID: '500000000000000000',
   },
 },
 ```
 
-- [ ] **Step 3: test 実行**
+- [ ] **Step 3: test 実行 → 成功確認**
 
 ```bash
 npm test test/integration/worker.test.ts
 ```
 
-Expected: 3 tests (maybe 1 fails for PONG due to env injection timing — adjust with direct fetch env override if needed)
+Expected: 3 tests PASS
 
-- [ ] **Step 4: 必要ならpublic key injection の方法を調整**
-
-もし PONG テストが miniflare env override の都合で難しい場合、`vitest.config.ts` で事前に固定公開鍵を埋め、テスト側で対応する private key を保持する形に切替（fixture ファイルに keypair をハードコード）。
-
-- [ ] **Step 5: 全テスト実行**
+- [ ] **Step 4: 全テスト実行**
 
 ```bash
 npm test
@@ -1721,11 +1681,11 @@ npm test
 
 Expected: all pass
 
-- [ ] **Step 6: commit**
+- [ ] **Step 5: commit**
 
 ```bash
 git add test/integration/worker.test.ts vitest.config.ts
-git commit -m "test: add worker integration tests for PING and signature verify"
+git commit -m "test: add worker integration tests for signature verification negative paths"
 ```
 
 ---
@@ -2483,16 +2443,97 @@ git commit -m "feat: add /channel move command (same-category reorder)"
 - Create: `test/commands/settopic.test.ts`
 - Modify: `src/commands/index.ts`
 
-rename と同じ構造。topic を PATCH する。
+rename と同じ構造（オーナー検証 → Discord REST PATCH → D1更新 → 監査ログ）。topic を PATCH する点だけ違う。
 
-- [ ] **Step 1: 全体（test + 実装）を rename に倣って作成**
+- [ ] **Step 1: failing test を書く**
 
-`test/commands/settopic.test.ts` と `src/commands/settopic.ts` を rename と同様のパターンで実装。
-- option 名: `topic`（string）
-- Discord API: `patchChannel(id, { topic })`
-- 監査イベント: `channel_topic_updated`（`old_topic`, `new_topic` を含む）
+`test/commands/settopic.test.ts`:
 
-完全なコード:
+```ts
+import { describe, it, expect, vi } from 'vitest';
+import { env } from 'cloudflare:test';
+import { handleSetTopic } from '../../src/commands/settopic.js';
+import { createStore } from '../../src/ownership/store.js';
+import { commandInteraction } from '../fixtures/interactions.js';
+
+const envBase = { ...env, ADMIN_ROLE_IDS: ['admin1'], DB: env.DB };
+
+function mockRest() {
+  return {
+    patchChannel: vi.fn().mockResolvedValue({ id: 'ch1' }),
+    getChannel: vi.fn().mockResolvedValue({ id: 'ch1', topic: 'old topic' }),
+    deleteChannel: vi.fn(), createGuildChannel: vi.fn(),
+    postMessage: vi.fn(), listGuildChannels: vi.fn(),
+  };
+}
+
+describe('/channel settopic', () => {
+  it('owner が実行 → 成功', async () => {
+    const store = createStore(env.DB);
+    await store.insertChannel({ channel_id: 'ch1', owner_id: 'u1', kind: 'text' });
+    const rest = mockRest();
+    const interaction = commandInteraction({
+      commandName: 'channel', subcommand: 'settopic',
+      options: [{ name: 'topic', value: 'new awesome topic' }],
+      userId: 'u1', channelId: 'ch1', guildId: 'g1',
+    });
+    const res = await handleSetTopic(interaction as any, envBase as any, { store, rest: rest as any });
+    expect(res.data?.content).toContain('✅');
+    expect(rest.patchChannel).toHaveBeenCalledWith('ch1', { topic: 'new awesome topic' });
+  });
+
+  it('非owner が実行 → 拒否', async () => {
+    const store = createStore(env.DB);
+    await store.insertChannel({ channel_id: 'ch1', owner_id: 'u1', kind: 'text' });
+    const rest = mockRest();
+    const interaction = commandInteraction({
+      commandName: 'channel', subcommand: 'settopic',
+      options: [{ name: 'topic', value: 'hacked' }],
+      userId: 'u2', channelId: 'ch1', guildId: 'g1',
+    });
+    const res = await handleSetTopic(interaction as any, envBase as any, { store, rest: rest as any });
+    expect(res.data?.content).toContain('❌');
+    expect(rest.patchChannel).not.toHaveBeenCalled();
+  });
+
+  it('admin が実行 → 成功', async () => {
+    const store = createStore(env.DB);
+    await store.insertChannel({ channel_id: 'ch1', owner_id: 'u1', kind: 'text' });
+    const rest = mockRest();
+    const interaction = commandInteraction({
+      commandName: 'channel', subcommand: 'settopic',
+      options: [{ name: 'topic', value: 'admin changed' }],
+      userId: 'admin-user', userRoles: ['admin1'],
+      channelId: 'ch1', guildId: 'g1',
+    });
+    const res = await handleSetTopic(interaction as any, envBase as any, { store, rest: rest as any });
+    expect(res.data?.content).toContain('✅');
+    expect(rest.patchChannel).toHaveBeenCalled();
+  });
+
+  it('未登録ch は拒否', async () => {
+    const store = createStore(env.DB);
+    const rest = mockRest();
+    const interaction = commandInteraction({
+      commandName: 'channel', subcommand: 'settopic',
+      options: [{ name: 'topic', value: 'foo' }],
+      userId: 'u1', channelId: 'ch1', guildId: 'g1',
+    });
+    const res = await handleSetTopic(interaction as any, envBase as any, { store, rest: rest as any });
+    expect(res.data?.content).toContain('登録されていません');
+  });
+});
+```
+
+- [ ] **Step 2: test 実行 → 失敗確認**
+
+```bash
+npm test test/commands/settopic.test.ts
+```
+
+Expected: FAIL (module not found)
+
+- [ ] **Step 3: 実装**
 
 `src/commands/settopic.ts`:
 
@@ -2539,9 +2580,18 @@ export async function handleSetTopic(
 }
 ```
 
-`test/commands/settopic.test.ts`: rename のテストを流用し、option を `{ name: 'topic', value: '...' }` に、期待される `patchChannel` 呼び出しを `{ topic: ... }` に書き換え。最低3ケース（owner成功、非owner拒否、未登録ch拒否）。
+- [ ] **Step 4: index.ts に登録**
 
-- [ ] **Step 2: index.ts に登録 + test + commit**
+```ts
+import { handleSetTopic } from './settopic.js';
+router.register('channel', 'settopic', async (interaction, env) => {
+  const store = createStore(env.DB as unknown as D1Database);
+  const rest = createDiscordRest(env.DISCORD_TOKEN);
+  return handleSetTopic(interaction, env, { store, rest });
+});
+```
+
+- [ ] **Step 5: test → 成功 + commit**
 
 ```bash
 npm test test/commands/settopic.test.ts && \
@@ -2650,20 +2700,26 @@ describe('/channel create', () => {
     expect(rest.createGuildChannel).not.toHaveBeenCalled();
   });
 
-  it('race: INSERT 失敗時は Discord 側を補償削除', async () => {
-    const store = createStore(env.DB);
-    // 同時create想定: 先に別のcreate が成功している状態を模擬
-    await store.insertChannel({ channel_id: 'other', owner_id: 'u1', kind: 'text' });
-    const rest = mockRest({ createdId: 'ch-new' });
+  it('race loss: insertChannelIfNoneOwned が false → Discord側を補償削除', async () => {
+    // pre-check は通すが INSERT WHERE NOT EXISTS で負ける状況を再現するため、
+    // Store を部分的にstubする（hasChannel→false、insertChannelIfNoneOwned→false）
+    const realStore = createStore(env.DB);
+    const stubStore = {
+      ...realStore,
+      hasChannel: vi.fn().mockResolvedValue(false),
+      insertChannelIfNoneOwned: vi.fn().mockResolvedValue(false),
+    };
+    const rest = mockRest({ createdId: 'ch-race' });
     const interaction = commandInteraction({
       commandName: 'channel', subcommand: 'create',
-      options: [{ name: 'name', value: 'second' }],
+      options: [{ name: 'name', value: 'race-loser' }],
       userId: 'u1', channelId: 'from-ch', guildId: 'g1',
     });
-    // 今回のtestは "pre-check で弾かれる" パスになるため、race状態の再現には別アプローチが必要。
-    // 実装側で pre-check とINSERT WHERE NOT EXISTS の二段防御を持つため、pre-checkで拒否されるのは正しい挙動。
-    const res = await handleCreate(interaction as any, envBase as any, { store, rest: rest as any });
-    expect(res.data?.content).toContain('既に');
+    const res = await handleCreate(interaction as any, envBase as any, { store: stubStore as any, rest: rest as any });
+
+    expect(res.data?.content).toContain('レース');
+    expect(rest.createGuildChannel).toHaveBeenCalled();  // Discord側は一旦作成された
+    expect(rest.deleteChannel).toHaveBeenCalledWith('ch-race');  // その後補償削除された
   });
 });
 ```
@@ -3123,7 +3179,15 @@ git commit -m "feat: add delete-confirm component handler"
 **Files:**
 - Create: `scripts/register-commands.ts`
 
-- [ ] **Step 1: 実装**
+- [ ] **Step 1: dotenv を先にインストール**
+
+```bash
+npm install -D dotenv
+```
+
+Expected: `package.json` の `devDependencies` に dotenv 追加
+
+- [ ] **Step 2: 実装**
 
 ```ts
 import { config } from 'dotenv';
@@ -3189,12 +3253,6 @@ if (!res.ok) {
 }
 const registered = await res.json();
 console.log(`✅ Registered ${(registered as any[]).length} commands`);
-```
-
-- [ ] **Step 2: dotenv 追加**
-
-```bash
-npm install -D dotenv
 ```
 
 - [ ] **Step 3: commit**
@@ -3393,9 +3451,12 @@ npm run register-commands
 全claim完了後:
 ```bash
 rm src/commands/claim.ts
+rm test/commands/claim.test.ts   # テストも同時削除（CI失敗回避）
 # src/commands/index.ts から claim 登録を削除
+# scripts/register-commands.ts から claim エントリを削除
+npm test                         # 全テストgreen確認
 git commit -am "chore: disable /channel claim after migration complete"
-npm run register-commands   # 登録解除
+npm run register-commands        # Discord側コマンド再登録（claimは消える）
 npx wrangler deploy
 ```
 
