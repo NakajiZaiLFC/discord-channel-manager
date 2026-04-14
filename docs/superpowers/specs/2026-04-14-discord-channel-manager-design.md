@@ -28,7 +28,7 @@ Bot を噛ませることで:
 ### MVP に含む
 
 - **対象**: 単一サーバ（`GUILD_ID` 1つ）、テキストチャンネルのみ（アーキテクチャは voice / category 拡張可能な形で実装）
-- **Slash commands**: `create`, `rename`, `move`, `delete`, `settopic`, `transfer`, `claim`, `list`
+- **Slash commands**: `create`, `rename`, `move`, `delete`, `settopic`, `claim`, `list`
 - **制約**: 非管理者は **1人1チャンネル**
 - **永続化**: Cloudflare D1 にオーナー台帳
 - **監査**: 専用Discordチャンネルに操作イベントを best-effort 投稿
@@ -59,7 +59,6 @@ Bot を噛ませることで:
 | `/channel move <position>` | ◯（cross-categoryは将来） | ◯（同カテゴリ内リオーダーのみ） | ✕ | 対象ch内 |
 | `/channel delete` | ◯（確認ダイアログ付） | ◯（確認ダイアログ付） | ✕ | 対象ch内 |
 | `/channel settopic <text>` | ◯ | ◯ | ✕ | 対象ch内 |
-| `/channel transfer <@user>` | ◯ | ◯（受け手の1ch制約を確認） | ✕ | 対象ch内 |
 | `/channel claim <@user>` | ◯（マイグレ用） | ✕ | ✕ | 対象ch内 |
 | `/channel list` | ◯ | ✕ | ✕ | どこでも |
 
@@ -118,7 +117,6 @@ src/
 │   ├── move.ts
 │   ├── delete.ts              # コマンド側: 確認ボタン表示 + nonce登録
 │   ├── settopic.ts
-│   ├── transfer.ts            # 受け手の1ch制約チェック
 │   ├── claim.ts               # マイグレ完了後に削除
 │   └── list.ts                # admin専用
 ├── components/
@@ -270,7 +268,6 @@ CREATE INDEX idx_nonces_expires ON nonces(expires_at);
 - `channel_topic_updated` — settopic 成功時（oldTopic, newTopic）
 - `channel_deleted` — delete 成功時
 - `ownership_claimed` — claim 成功時
-- `ownership_transferred` — transfer 成功時（oldOwnerId, newOwnerId）
 
 全イベント共通フィールド: `type`, `channel_id`, `actor_id`, `ts`
 
@@ -418,7 +415,7 @@ npx tsx scripts/register-commands.ts
 - **荒らし検知（Gateway移行）**: Worker → Node.js 常駐ホストへ移行する場合、`ownership/*` と `commands/*` は流用、`worker.ts` / `discord/rest.ts` / 受信経路のみ書き換え
 - **1人Nチャンネル制約**: D1 `COUNT` 判定の上限値を env 化するだけ
 - **Cron整合性チェック**: `wrangler.toml` の `[triggers] crons = ["0 3 * * *"]` で 毎日D1 vs Discord実態を照合 → ログchに差分投稿
-- **transfer通知**: 新旧オーナー両方にDM送信（Discord REST `POST /users/@me/channels` → `POST /channels/:dm/messages`）
+- **オーナー引き継ぎ（transfer）**: 将来引き継ぎ需要が発生したら追加。新旧オーナーへのDM通知付き
 
 ---
 
