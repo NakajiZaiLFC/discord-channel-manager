@@ -1,10 +1,16 @@
 import { env } from 'cloudflare:test';
-import fs from 'node:fs';
+// @ts-expect-error — vite "?raw" import: returns file contents as string
+import schemaSql from '../scripts/schema.sql?raw';
 
 export async function applyMigrations(): Promise<void> {
-  const schema = fs.readFileSync('./scripts/schema.sql', 'utf8');
-  const stmts = schema.split(';').map(s => s.trim()).filter(Boolean);
+  // Reset schema for a clean slate between tests.
+  await env.DB.prepare('DROP TABLE IF EXISTS channels').run();
+  const stmts = (schemaSql as string)
+    .split(';')
+    .map((s: string) => s.trim())
+    .filter(Boolean);
   for (const sql of stmts) {
-    await env.DB.exec(sql);
+    // D1.prepare(...).run() accepts a single statement.
+    await env.DB.prepare(sql).run();
   }
 }
