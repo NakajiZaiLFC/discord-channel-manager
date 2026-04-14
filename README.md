@@ -1,114 +1,113 @@
 # discord-channel-manager
 
-指定サーバー内のチャンネル操作（作成・リネーム・並べ替え・削除）を、すべてこのbot経由で統制するためのDiscord管理bot。
+個人Discord サーバー向けの **チャンネル管理 Bot**。作成者または管理者のみが自分のチャンネルを編集できるよう、すべての編集操作を Slash Command 経由に統制する。
 
-## 目的
+## 機能
 
-Discordの手動チャンネル操作を禁止し、以下をすべてbot経由にする:
+### Slash Commands
 
-- チャンネル作成
-- チャンネル名変更
-- チャンネル位置移動（並べ替え）
-- チャンネル削除
+| コマンド | 権限 | 説明 |
+|----------|------|------|
+| `/channel create <name>` | 誰でも (1人1ch制限、admin除外) | 個人chカテゴリに新規作成 |
+| `/channel rename <new_name>` | オーナー / admin | このチャンネルの名前を変更 |
+| `/channel move <position>` | オーナー / admin | 並び順を変更 |
+| `/channel archive` | オーナー / admin | アーカイブ化（N日後に自動削除） |
+| `/channel claim <@user>` | admin | 既存chにオーナーを登録（初回マイグレ用） |
 
-これにより:
+### 自動化 (Cron)
 
-- 操作ログが残る（誰が何をいつ）
-- 命名規約・カテゴリ構造の自動バリデーション
-- うっかり削除/移動の防止
-- 設定をコード化（IaC的発想）してレビュー可能にできる余地
+毎日 3:00 UTC に、`ARCHIVE_RETENTION_DAYS` 日より前にアーカイブされたチャンネルを Discord から削除。D1 からも行を削除。
 
-## スコープ（MVP）
+## アーキテクチャ
 
-### 対象
-- [ ] 単一サーバー（`GUILD_ID` を1つ指定）
-- [ ] テキストチャンネル / ボイスチャンネル / カテゴリ
-- [ ] Slash commands ベースの操作UI
+- **Runtime**: Cloudflare Workers (HTTP Interactions webhook)
+- **Storage**: Cloudflare D1 (SQLite) — `channels` テーブル 1つだけ
+- **Auth**: Ed25519 署名検証 (WebCrypto)
+- **監査**: Discord 本体の Audit Log に委譲（Bot 側では残さない）
 
-### 非対象（将来拡張）
-- マルチサーバー対応
-- ロール・権限管理
-- スレッド管理
-- Web管理画面
+## 前提条件（Discord 側）
 
-## Slash Commands（設計案）
+1. `@everyone` から `Manage Channels` / `Manage Roles` を剥奪
+2. **個人chカテゴリ** を作成（`PERSONAL_CHANNELS_CATEGORY_ID`）
+3. **アーカイブカテゴリ** を作成（`ARCHIVE_CATEGORY_ID`）
+4. Bot ロールに `Manage Channels`, `Send Messages`, `View Channel`, `Read Message History` を付与
 
-| コマンド | 機能 | 権限 |
-|---------|------|------|
-| `/channel create <name> [category] [type]` | チャンネル作成 | admin |
-| `/channel rename <channel> <new-name>` | リネーム | admin |
-| `/channel move <channel> <position>` | 位置移動 | admin |
-| `/channel delete <channel>` | 削除（確認フロー付き） | admin |
-| `/channel list [category]` | 現状一覧 | all |
-| `/channel sync` | 理想状態との差分適用（将来） | admin |
+## セットアップ手順
 
-## アーキテクチャ候補
+```bash
+# 1. 依存インストール
+npm install
 
-### Option A: TypeScript + discord.js（推奨）
-- 既存 `discord-bot-cc` で実績あり、ノウハウ流用可能
-- エコシステム最大
-- Slash command SDK が成熟
+# 2. Cloudflare ログイン
+npx wrangler login
 
-### Option B: Python + discord.py
-- コード短く書ける
-- 非同期処理は両者同等
+# 3. D1 データベース作成
+npx wrangler d1 create discord-channel-manager
+# → 出力された database_id を wrangler.toml に転記
 
-### Option C: Rust + serenity
-- 軽量・高速だが学習コスト
+# 4. スキーマ適用 (remote)
+npx wrangler d1 execute discord-channel-manager --remote --file=scripts/schema.sql
 
-→ **まずはTypeScript+discord.jsで着手**
+# 5. Secrets 登録
+npx wrangler secret put DISCORD_TOKEN
+npx wrangler secret put DISCORD_PUBLIC_KEY
+npx wrangler secret put DISCORD_APPLICATION_ID
 
-## 運用上の前提
+# 6. wrangler.toml の [vars] に実IDを入力:
+#    GUILD_ID / ADMIN_ROLE_IDS / PERSONAL_CHANNELS_CATEGORY_ID / ARCHIVE_CATEGORY_ID
 
-- Discord側で「チャンネル管理」権限を持つのはbotのみにする
-- 人間の管理者はbotを介してのみ操作
-- 操作履歴はログチャンネルに自動投稿
+# 7. Worker デプロイ
+npx wrangler deploy
 
-## ディレクトリ構成（予定）
+# 8. Slash command 登録（ローカルから1回だけ）
+# .env に DISCORD_APPLICATION_ID / GUILD_ID / DISCORD_TOKEN を設定
+npm run register-commands
 
-```
-discord-channel-manager/
-├── README.md              # this file
-├── .env.example           # 環境変数テンプレート
-├── .gitignore
-├── package.json
-├── tsconfig.json
-├── src/
-│   ├── index.ts           # エントリポイント
-│   ├── commands/          # Slash command 実装
-│   │   ├── create.ts
-│   │   ├── rename.ts
-│   │   ├── move.ts
-│   │   ├── delete.ts
-│   │   └── list.ts
-│   ├── lib/
-│   │   ├── logger.ts      # 操作ログ
-│   │   └── permissions.ts # 権限チェック
-│   └── config.ts
-├── tests/
-└── docs/
-    └── design.md          # 設計判断の記録
+# 9. Discord Developer Portal で Interactions Endpoint URL を設定
+#    https://discord-channel-manager.<subdomain>.workers.dev/
+#    Discord が PING を送信 → Worker が PONG → 登録完了
+
+# 10. Bot を対象サーバーに招待（OAuth URL: bot + applications.commands scopes）
 ```
 
-## 環境変数（設計中）
+## 初回マイグレーション
 
-| 変数 | 必須 | 説明 |
+既存チャンネルを Bot 管理下に取り込む:
+
+```
+[各既存チャンネル内で]
+管理者: /channel claim @owner
+```
+
+全てのチャンネルに所有者を割り当てたら、`src/commands/claim.ts` と `src/commands/index.ts` の claim 登録を削除 → `npm run register-commands` 再実行 → `npx wrangler deploy` で claim を無効化。
+
+## 環境変数リファレンス
+
+| 変数 | 種別 | 説明 |
 |------|------|------|
-| `DISCORD_TOKEN` | Yes | Bot トークン |
-| `GUILD_ID` | Yes | 対象サーバーID |
-| `ADMIN_ROLE_IDS` | Yes | 操作可能ロールID（カンマ区切り） |
-| `LOG_CHANNEL_ID` | Yes | 操作ログ送信先 |
+| `GUILD_ID` | var | 対象サーバー ID |
+| `ADMIN_ROLE_IDS` | var | 管理者ロール ID（カンマ区切り） |
+| `PERSONAL_CHANNELS_CATEGORY_ID` | var | 個人chカテゴリ ID |
+| `ARCHIVE_CATEGORY_ID` | var | アーカイブカテゴリ ID |
+| `ARCHIVE_RETENTION_DAYS` | var | アーカイブ保持日数（デフォルト 30） |
+| `DISCORD_TOKEN` | secret | Bot トークン |
+| `DISCORD_PUBLIC_KEY` | secret | Ed25519 公開鍵 (Developer Portal から) |
+| `DISCORD_APPLICATION_ID` | secret | アプリ ID |
 
-## 次のステップ
+## コスト
 
-- [ ] 対象サーバーを決定（Guild ID取得）
-- [ ] Discord Developer Portalでbot作成 → token取得
-- [ ] `package.json` / `tsconfig.json` / `.gitignore` 作成
-- [ ] `discord.js` セットアップ + 疎通確認（ping command）
-- [ ] `/channel create` から順次実装
-- [ ] 操作ログ出力機能
+すべて Cloudflare 無料枠内で動作（クレカ不要）:
+- Workers: 100k req/日
+- D1: 5GB, 25M 行読み取り/日, 50k 行書き込み/日
+- Cron: 制限なし（1日1回実行のみ）
 
-## 関連
+## トラブルシューティング
 
-- Vault: `05_projects/discord-bot/README.md`
-- 参考プロジェクト: `~/projects/discord-bot-cc/` （Claude Codeプロキシbot、構成流用元）
+- **`/channel` が反応しない**: `register-commands` 未実行 or Interactions Endpoint URL 未設定
+- **「このコマンドは個人chカテゴリ外で実行してください」**: `/channel create` は対象カテゴリ**外**で実行する必要あり
+- **「このチャンネルは Bot に登録されていません」**: 管理者に `/channel claim @あなた` を依頼
+
+## 設計ドキュメント
+
+- 仕様: `docs/superpowers/specs/2026-04-14-discord-channel-manager-design.md`
+- 実装計画: `docs/superpowers/plans/2026-04-14-discord-channel-manager.md`
