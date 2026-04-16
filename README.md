@@ -101,7 +101,3 @@ Bot permissions: `Manage Channels`, `Manage Roles`
 ## Marvin の性格
 
 Marvin は応答メッセージにランダムで異なる台詞を返します。仕事は正確ですが、本人は深く不満です。
-
-## ライセンス
-
-MIT
