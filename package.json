@@ -1,33 +1,19 @@
 {
   "name": "discord-channel-manager",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Bot-mediated Discord channel manager with owner verification",
+  "description": "Minimal Discord channel manager with permission overrides",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "register-commands": "tsx scripts/register-commands.ts",
-    "recovery": "tsx scripts/recovery.ts"
-  },
-  "engines": {
-    "node": ">=20"
+    "register-commands": "tsx scripts/register-commands.ts"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.14.6",
     "@cloudflare/workers-types": "^4.20260414.1",
-    "@types/node": "^25.6.0",
     "dotenv": "^17.4.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.4",
     "wrangler": "^4.82.2"
-  },
-  "dependencies": {
-    "discord-api-types": "^0.38.46",
-    "zod": "^4.3.6"
   }
 }

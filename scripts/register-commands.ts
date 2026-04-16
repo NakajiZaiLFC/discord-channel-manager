@@ -13,43 +13,22 @@ if (!APP_ID || !GUILD_ID || !TOKEN) {
 const commands = [
   {
     name: 'channel',
-    description: 'チャンネル管理コマンド',
+    description: 'チャンネル管理',
     options: [
       {
         name: 'create',
-        type: 1, // Subcommand
+        type: 1,
         description: '新しいチャンネルを作成',
         options: [
           { name: 'name', type: 3, description: 'チャンネル名', required: true },
         ],
       },
       {
-        name: 'rename',
-        type: 1,
-        description: 'このチャンネルの名前を変更',
-        options: [
-          { name: 'new_name', type: 3, description: '新しい名前', required: true },
-        ],
-      },
-      {
-        name: 'move',
-        type: 1,
-        description: 'このチャンネルの並び順を変更',
-        options: [
-          { name: 'position', type: 4, description: '位置 (0=先頭)', required: true },
-        ],
-      },
-      {
-        name: 'archive',
-        type: 1,
-        description: 'このチャンネルをアーカイブ（30日後に自動削除）',
-      },
-      {
         name: 'claim',
         type: 1,
-        description: '[admin] 既存チャンネルのオーナーを割り当て',
+        description: '[admin] 既存chにオーナーを割り当て',
         options: [
-          { name: 'user', type: 6, description: 'オーナーに設定するユーザー', required: true },
+          { name: 'user', type: 6, description: 'オーナー', required: true },
         ],
       },
     ],
@@ -71,5 +50,5 @@ if (!res.ok) {
   process.exit(1);
 }
 
-const registered = await res.json() as unknown[];
-console.log(`✅ Registered ${registered.length} commands (guild-scoped, instant propagation)`);
+const registered = (await res.json()) as unknown[];
+console.log(`✅ ${registered.length} commands registered (guild-scoped)`);

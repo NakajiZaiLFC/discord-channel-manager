@@ -1,28 +1,21 @@
-import type { APIInteraction, APIInteractionResponse } from './discord/types.js';
-import { InteractionType, InteractionResponseType, MessageFlags } from './discord/types.js';
 import { verifySignature } from './verify.js';
-import { validateEnv, type Env } from './config.js';
-import { createCommandRouter } from './interactions/command-router.js';
-import { registerCommands } from './commands/index.js';
-import { runCleanup } from './cron.js';
-import { DomainError } from './lib/errors.js';
+import { handleCreate, handleClaim } from './commands.js';
 
-const commandRouter = createCommandRouter();
-registerCommands(commandRouter);
+interface Env {
+  GUILD_ID: string;
+  ADMIN_ROLE_IDS: string;
+  PERSONAL_CHANNELS_CATEGORY_ID: string;
+  DISCORD_TOKEN: string;
+  DISCORD_PUBLIC_KEY: string;
+}
 
 export default {
-  async fetch(request: Request, rawEnv: unknown): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
       return new Response('Method Not Allowed', { status: 405 });
     }
 
-    let env: Env;
-    try { env = validateEnv(rawEnv); }
-    catch (e) {
-      console.error('[env] validation failed', e);
-      return new Response('misconfiguration', { status: 500 });
-    }
-
+    // 署名検証 (raw body → verify → JSON parse の順)
     const sig = request.headers.get('X-Signature-Ed25519');
     const ts = request.headers.get('X-Signature-Timestamp');
     if (!sig || !ts) return new Response('missing signature headers', { status: 401 });
@@ -32,49 +25,45 @@ export default {
       return new Response('invalid signature', { status: 401 });
     }
 
-    let interaction: APIInteraction;
-    try { interaction = JSON.parse(raw); }
-    catch { return new Response('bad json', { status: 400 }); }
+    const interaction = JSON.parse(raw);
 
-    try {
-      const response = await dispatch(interaction, env);
-      return json(response);
-    } catch (e) {
-      console.error('[worker] unhandled error', e);
-      const msg = e instanceof DomainError ? e.userMessage : '❌ 内部エラーが発生しました';
-      return json({
-        type: InteractionResponseType.ChannelMessageWithSource,
-        data: { content: msg, flags: MessageFlags.Ephemeral },
-      });
+    // PING → PONG
+    if (interaction.type === 1) {
+      return json({ type: 1 });
     }
-  },
 
-  async scheduled(_event: ScheduledEvent, rawEnv: unknown, _ctx: ExecutionContext): Promise<void> {
-    let env: Env;
-    try { env = validateEnv(rawEnv); }
-    catch (e) { console.error('[cron] env validation failed', e); return; }
-    const result = await runCleanup(env);
-    console.log('[cron] cleanup complete', result);
+    // APPLICATION_COMMAND
+    if (interaction.type === 2) {
+      try {
+        const sub = interaction.data?.options?.[0]?.name;
+        let response;
+        switch (sub) {
+          case 'create':
+            response = await handleCreate(interaction, env);
+            break;
+          case 'claim':
+            response = await handleClaim(interaction, env);
+            break;
+          default:
+            response = ephemeral('❌ 未知のコマンドです');
+        }
+        return json(response);
+      } catch (e) {
+        console.error('[worker] error:', e);
+        return json(ephemeral('❌ 内部エラーが発生しました'));
+      }
+    }
+
+    return json(ephemeral('❌ 未対応のインタラクションです'));
   },
 };
 
-async function dispatch(interaction: APIInteraction, env: Env): Promise<APIInteractionResponse> {
-  switch (interaction.type) {
-    case InteractionType.Ping:
-      return { type: InteractionResponseType.Pong };
-    case InteractionType.ApplicationCommand:
-      return commandRouter.handle(interaction, env);
-    default:
-      return {
-        type: InteractionResponseType.ChannelMessageWithSource,
-        data: { content: '❌ 未対応のインタラクションです', flags: MessageFlags.Ephemeral },
-      };
-  }
-}
-
-function json(res: APIInteractionResponse): Response {
-  return new Response(JSON.stringify(res), {
-    status: 200,
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+function ephemeral(content: string) {
+  return { type: 4, data: { content, flags: 64 } };
 }
