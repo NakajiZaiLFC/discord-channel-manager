@@ -1,5 +1,6 @@
 import { verifySignature } from './verify.js';
 import { handleCreate, handleClaim } from './commands.js';
+import { messages } from './messages.js';
 
 interface Env {
   GUILD_ID: string;
@@ -15,7 +16,6 @@ export default {
       return new Response('Method Not Allowed', { status: 405 });
     }
 
-    // 署名検証 (raw body → verify → JSON parse の順)
     const sig = request.headers.get('X-Signature-Ed25519');
     const ts = request.headers.get('X-Signature-Timestamp');
     if (!sig || !ts) return new Response('missing signature headers', { status: 401 });
@@ -27,12 +27,10 @@ export default {
 
     const interaction = JSON.parse(raw);
 
-    // PING → PONG
     if (interaction.type === 1) {
       return json({ type: 1 });
     }
 
-    // APPLICATION_COMMAND
     if (interaction.type === 2) {
       try {
         const sub = interaction.data?.options?.[0]?.name;
@@ -45,16 +43,16 @@ export default {
             response = await handleClaim(interaction, env);
             break;
           default:
-            response = ephemeral('❌ 未知のコマンドです');
+            response = ephemeral(messages.unknownCommand());
         }
         return json(response);
       } catch (e) {
         console.error('[worker] error:', e);
-        return json(ephemeral('❌ 内部エラーが発生しました'));
+        return json(ephemeral(messages.internalError()));
       }
     }
 
-    return json(ephemeral('❌ 未対応のインタラクションです'));
+    return json(ephemeral(messages.unknownCommand()));
   },
 };
 

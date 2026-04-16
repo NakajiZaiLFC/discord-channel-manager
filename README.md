@@ -1,69 +1,107 @@
-# discord-channel-manager
+# Marvin — チャンネル管理ロボット
 
-Discord チャンネルの管理権限を**作成者本人と管理者だけ**に限定する Bot。
+> 脳が惑星サイズなのに、やらされている仕事はチャンネルの権限設定です。
+
+42 Tokyo の Discord サーバー向けチャンネル管理 Bot。チャンネル作成時に **作成者だけに編集権限（Permission Override）を自動付与** し、他人には触らせない。
 
 ## 仕組み
 
-チャンネル作成時に、**そのチャンネルだけ**に作成者への `Manage Channels` 権限オーバーライドを付与する。以降の編集・削除・並び替えは Discord の標準 UI で操作可能。他人のチャンネルは触れない。
+Discord の「権限オーバーライド」を利用。チャンネルごとに個別の権限例外を設定することで、**サーバー全体の権限を変えずに「自分のチャンネルだけ編集可能」** を実現する。
+
+- データベースなし — Discord 自体が権限情報を保持
+- Marvin が落ちても権限は消えない
+- 編集・削除・並び替えは Discord の標準 UI で操作
 
 ## コマンド
 
 | コマンド | 権限 | 説明 |
 |---------|------|------|
-| `/channel create <name>` | 誰でも（1人1ch、admin除外） | 個人chカテゴリにチャンネル作成 + 権限付与 |
-| `/channel claim <@user>` | admin のみ | 既存chに権限オーバーライドを後付け |
+| `/channel create <name>` | 誰でも（1人1ch、admin除外） | 指定カテゴリにチャンネル作成 + 権限付与 |
+| `/channel claim <@user>` | admin のみ | 既存チャンネルに権限オーバーライドを後付け |
+
+## アーキテクチャ
+
+```
+Discord → HTTP POST (署名付き) → Cloudflare Workers → Discord REST API
+```
+
+- **Runtime**: Cloudflare Workers（HTTP Interactions エンドポイント）
+- **署名検証**: Ed25519 (WebCrypto)
+- **ストレージ**: なし（Discord の Permission Overrides が情報源）
+- **コスト**: Cloudflare 無料枠内（クレカ不要）
+
+## 前提条件（Discord 側）
+
+1. `@everyone` から `Manage Channels` を剥奪
+2. チャンネル配置先のカテゴリを作成（ID をメモ）
+3. Bot ロールに `Manage Channels`, `Manage Roles` を付与
 
 ## セットアップ
 
-### 1. Discord 側の準備
-
-- `@everyone` から `Manage Channels` を剥奪
-- **個人chカテゴリ** を作成（ID をメモ）
-- Bot ロールに `Manage Channels`, `Manage Roles`, `View Channel` を付与
-
-### 2. Cloudflare にデプロイ
+### 1. インストール
 
 ```bash
+git clone https://github.com/<your-org>/discord-channel-manager.git
+cd discord-channel-manager
 npm install
+```
+
+### 2. 設定
+
+`wrangler.toml` の `[vars]` に以下を記入:
+
+| 変数 | 説明 |
+|------|------|
+| `GUILD_ID` | サーバー ID |
+| `ADMIN_ROLE_IDS` | 管理者ロール ID（カンマ区切り） |
+| `PERSONAL_CHANNELS_CATEGORY_ID` | チャンネル配置先カテゴリ ID |
+
+### 3. デプロイ
+
+```bash
 npx wrangler login
 npx wrangler deploy
 ```
 
-### 3. 設定
+### 4. Secrets 登録
 
 ```bash
-# wrangler.toml の [vars] に記入:
-#   GUILD_ID, ADMIN_ROLE_IDS, PERSONAL_CHANNELS_CATEGORY_ID
-
-# Secrets:
 npx wrangler secret put DISCORD_TOKEN
 npx wrangler secret put DISCORD_PUBLIC_KEY
 npx wrangler secret put DISCORD_APPLICATION_ID
 ```
 
-### 4. コマンド登録
+### 5. コマンド登録
 
 ```bash
 # .env に DISCORD_APPLICATION_ID / GUILD_ID / DISCORD_TOKEN を設定
 npm run register-commands
 ```
 
-### 5. Interactions Endpoint URL を設定
+### 6. Interactions Endpoint URL
 
-Discord Developer Portal → Application → Interactions Endpoint URL に Worker の URL を入力。
+Discord Developer Portal → Application → General Information → Interactions Endpoint URL に Worker の URL を入力。
 
-### 6. Bot をサーバーに招待
+### 7. Bot 招待
 
 OAuth scopes: `bot`, `applications.commands`
-Bot permissions: `Manage Channels`, `Manage Roles`, `View Channel`
+Bot permissions: `Manage Channels`, `Manage Roles`
 
-### 7. 初回マイグレーション
+### 8. 初回マイグレーション
 
-既存チャンネルに権限を付与:
+既存チャンネルに権限を後付け:
 
 ```
 [各チャンネル内で]
 管理者: /channel claim @owner
 ```
 
-全チャンネル完了後、必要に応じて claim コマンドを削除。
+完了後、必要に応じて claim コマンドを無効化。
+
+## Marvin の性格
+
+Marvin は応答メッセージにランダムで異なる台詞を返します。仕事は正確ですが、本人は深く不満です。
+
+## ライセンス
+
+MIT

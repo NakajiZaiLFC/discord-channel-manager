@@ -1,4 +1,5 @@
 import { createGuildChannel, addPermissionOverride, getGuildChannels } from './discord.js';
+import { messages } from './messages.js';
 
 interface Env {
   GUILD_ID: string;
@@ -37,9 +38,8 @@ export async function handleCreate(
   const admin = isAdmin(interaction.member.roles, env.ADMIN_ROLE_IDS);
 
   const name = getOption(interaction, 'name');
-  if (!name) return ephemeral('❌ name が指定されていません');
+  if (!name) return ephemeral(messages.createNoName());
 
-  // 1人1ch 制約 (admin 以外)
   if (!admin) {
     const channels = await getGuildChannels(env.DISCORD_TOKEN, env.GUILD_ID);
     const owns = channels
@@ -50,19 +50,19 @@ export async function handleCreate(
         ),
       );
     if (owns) {
-      return ephemeral('❌ 既にチャンネルを所有しています（1人1チャンネル制限）');
+      return ephemeral(messages.createAlreadyOwns());
     }
   }
 
   const created = await createGuildChannel(env.DISCORD_TOKEN, env.GUILD_ID, {
     name,
-    type: 0, // GUILD_TEXT
+    type: 0,
     parent_id: env.PERSONAL_CHANNELS_CATEGORY_ID,
   });
 
   await addPermissionOverride(env.DISCORD_TOKEN, created.id, userId);
 
-  return ephemeral(`✅ チャンネルを作成しました → <#${created.id}>`);
+  return ephemeral(messages.createSuccess(`<#${created.id}>`));
 }
 
 export async function handleClaim(
@@ -70,14 +70,14 @@ export async function handleClaim(
   env: Env,
 ): Promise<InteractionResponse> {
   if (!isAdmin(interaction.member.roles, env.ADMIN_ROLE_IDS)) {
-    return ephemeral('❌ このコマンドは管理者専用です');
+    return ephemeral(messages.claimNotAdmin());
   }
 
   const target = getOption(interaction, 'user');
-  if (!target) return ephemeral('❌ 対象ユーザーが指定されていません');
+  if (!target) return ephemeral(messages.claimNoUser());
 
   const channelId: string = interaction.channel_id;
   await addPermissionOverride(env.DISCORD_TOKEN, channelId, target);
 
-  return ephemeral(`✅ <#${channelId}> の管理権限を <@${target}> に付与しました`);
+  return ephemeral(messages.claimSuccess(`<#${channelId}>`, `<@${target}>`));
 }
