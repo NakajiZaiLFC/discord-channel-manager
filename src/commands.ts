@@ -10,11 +10,15 @@ interface Env {
 
 interface InteractionResponse {
   type: number;
-  data?: { content: string; flags?: number };
+  data?: { content: string; flags?: number; components?: any[] };
 }
 
-function ephemeral(content: string): InteractionResponse {
-  return { type: 4, data: { content, flags: 64 } };
+function ephemeral(content: string, components?: any[]): InteractionResponse {
+  return { type: 4, data: { content, flags: 64, components } };
+}
+
+function updateMessage(content: string): InteractionResponse {
+  return { type: 7, data: { content, components: [] } };
 }
 
 function getOption(interaction: any, name: string): string | undefined {
@@ -87,53 +91,60 @@ export async function handleClaim(
   return ephemeral(messages.claimSuccess(`<#${channelId}>`, `<@${target}>`));
 }
 
-// --- /move list ---
+// --- /move → セレクトメニュー表示 ---
 
-async function fetchCategories(env: Env) {
-  const channels = await getGuildChannels(env.DISCORD_TOKEN, env.GUILD_ID);
-  return channels
-    .filter(c => c.type === GUILD_CATEGORY)
-    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-}
-
-export async function handleMoveList(
+export async function handleMove(
   interaction: any,
   env: Env,
 ): Promise<InteractionResponse> {
-  const categories = await fetchCategories(env);
+  const channels = await getGuildChannels(env.DISCORD_TOKEN, env.GUILD_ID);
+  const categories = channels
+    .filter(c => c.type === GUILD_CATEGORY)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
   if (categories.length === 0) {
     return ephemeral('カテゴリが見つかりません');
   }
 
-  const lines = categories.map((c, i) => `\`${i + 1}\`. ${c.name ?? '(名前なし)'}`);
-  return ephemeral(`📁 **カテゴリ一覧**\n${lines.join('\n')}\n\n\`/move to <番号>\` で移動`);
+  // Discord StringSelect は最大25件
+  const options = categories.slice(0, 25).map(c => ({
+    label: c.name ?? '(名前なし)',
+    value: c.id,
+  }));
+
+  return ephemeral('📁 移動先のカテゴリを選択してください', [
+    {
+      type: 1, // ActionRow
+      components: [
+        {
+          type: 3, // StringSelect
+          custom_id: 'move-category',
+          placeholder: 'カテゴリを選択',
+          options,
+        },
+      ],
+    },
+  ]);
 }
 
-// --- /move to ---
+// --- セレクト選択後の処理 ---
 
-export async function handleMoveTo(
+export async function handleMoveSelect(
   interaction: any,
   env: Env,
 ): Promise<InteractionResponse> {
-  const raw = getOption(interaction, 'category');
-  const num = Number(raw);
-  if (!raw || !Number.isInteger(num) || num < 1) {
-    return ephemeral('❌ カテゴリ番号を正しく指定してください（`/move list` で確認）');
-  }
+  const selectedId: string = interaction.data?.values?.[0];
+  if (!selectedId) return updateMessage('❌ 選択が無効です');
 
-  const categories = await fetchCategories(env);
-
-  if (num > categories.length) {
-    return ephemeral(`❌ カテゴリ番号は 1〜${categories.length} の範囲で指定してください`);
-  }
-
-  const target = categories[num - 1]!;
   const channelId: string = interaction.channel_id;
 
-  await patchChannel(env.DISCORD_TOKEN, channelId, { parent_id: target.id });
+  // カテゴリ名を取得して表示に使う
+  const channels = await getGuildChannels(env.DISCORD_TOKEN, env.GUILD_ID);
+  const target = channels.find(c => c.id === selectedId);
 
-  return ephemeral(`✅ カテゴリを「${target.name}」に移動しました`);
+  await patchChannel(env.DISCORD_TOKEN, channelId, { parent_id: selectedId });
+
+  return updateMessage(`✅ カテゴリを「${target?.name ?? selectedId}」に移動しました`);
 }
 
 // --- /help ---
@@ -143,8 +154,7 @@ export function handleHelp(): InteractionResponse {
     '📖 **コマンド一覧**\n\n' +
     '`/channel create <name>` — 新しいチャンネルを作成（1人1ch）\n' +
     '`/channel claim <@user>` — [admin] 既存chにオーナーを割り当て\n' +
-    '`/move list` — カテゴリ一覧を表示\n' +
-    '`/move to <番号>` — このチャンネルを指定カテゴリに移動\n' +
+    '`/move` — このチャンネルのカテゴリを移動\n' +
     '`/help` — このヘルプを表示',
   );
 }

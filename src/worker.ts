@@ -1,5 +1,5 @@
 import { verifySignature } from './verify.js';
-import { handleCreate, handleClaim, handleMoveList, handleMoveTo, handleHelp } from './commands.js';
+import { handleCreate, handleClaim, handleMove, handleMoveSelect, handleHelp } from './commands.js';
 import { messages } from './messages.js';
 
 interface Env {
@@ -27,10 +27,12 @@ export default {
 
     const interaction = JSON.parse(raw);
 
+    // PING
     if (interaction.type === 1) {
       return json({ type: 1 });
     }
 
+    // APPLICATION_COMMAND
     if (interaction.type === 2) {
       try {
         const command = interaction.data?.name;
@@ -46,11 +48,7 @@ export default {
             }
             break;
           case 'move':
-            switch (sub) {
-              case 'list': response = await handleMoveList(interaction, env); break;
-              case 'to':   response = await handleMoveTo(interaction, env); break;
-              default:     response = ephemeral(messages.unknownCommand());
-            }
+            response = await handleMove(interaction, env);
             break;
           case 'help':
             response = handleHelp();
@@ -63,6 +61,27 @@ export default {
       } catch (e) {
         console.error('[worker] error:', e);
         return json(ephemeral(messages.internalError()));
+      }
+    }
+
+    // MESSAGE_COMPONENT (セレクトメニュー等)
+    if (interaction.type === 3) {
+      try {
+        const customId = interaction.data?.custom_id;
+        let response;
+
+        switch (customId) {
+          case 'move-category':
+            response = await handleMoveSelect(interaction, env);
+            break;
+          default:
+            response = { type: 7, data: { content: '❌ 不明な操作です', components: [] } };
+        }
+
+        return json(response);
+      } catch (e) {
+        console.error('[worker] component error:', e);
+        return json({ type: 7, data: { content: messages.internalError(), components: [] } });
       }
     }
 
