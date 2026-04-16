@@ -1,5 +1,5 @@
 import { verifySignature } from './verify.js';
-import { handleCreate, handleClaim } from './commands.js';
+import { handleCreate, handleClaim, handleMoveList, handleMoveTo, handleHelp } from './commands.js';
 import { messages } from './messages.js';
 
 interface Env {
@@ -33,18 +33,32 @@ export default {
 
     if (interaction.type === 2) {
       try {
+        const command = interaction.data?.name;
         const sub = interaction.data?.options?.[0]?.name;
         let response;
-        switch (sub) {
-          case 'create':
-            response = await handleCreate(interaction, env);
+
+        switch (command) {
+          case 'channel':
+            switch (sub) {
+              case 'create': response = await handleCreate(interaction, env); break;
+              case 'claim':  response = await handleClaim(interaction, env); break;
+              default:       response = ephemeral(messages.unknownCommand());
+            }
             break;
-          case 'claim':
-            response = await handleClaim(interaction, env);
+          case 'move':
+            switch (sub) {
+              case 'list': response = await handleMoveList(interaction, env); break;
+              case 'to':   response = await handleMoveTo(interaction, env); break;
+              default:     response = ephemeral(messages.unknownCommand());
+            }
+            break;
+          case 'help':
+            response = handleHelp();
             break;
           default:
             response = ephemeral(messages.unknownCommand());
         }
+
         return json(response);
       } catch (e) {
         console.error('[worker] error:', e);
