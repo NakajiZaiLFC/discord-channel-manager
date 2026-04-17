@@ -30,6 +30,14 @@ const commands = [
     description: 'このチャンネルのカテゴリを移動',
   },
   {
+    name: 'stats',
+    description: 'チャンネル数の統計を表示',
+  },
+  {
+    name: 'inactive',
+    description: '半年以上未使用のチャンネル一覧',
+  },
+  {
     name: 'help',
     description: 'コマンド一覧を表示',
   },

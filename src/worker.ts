@@ -1,5 +1,5 @@
 import { verifySignature } from './verify.js';
-import { handleCreate, handleMove, handleMoveSelect, handleHelp } from './commands.js';
+import { handleCreate, handleMove, handleMoveSelect, handleStats, handleInactive, handleHelp } from './commands.js';
 import { messages } from './messages.js';
 
 interface Env {
@@ -48,6 +48,12 @@ export default {
             break;
           case 'move':
             response = await handleMove(interaction, env);
+            break;
+          case 'stats':
+            response = await handleStats(interaction, env);
+            break;
+          case 'inactive':
+            response = await handleInactive(interaction, env);
             break;
           case 'help':
             response = handleHelp();

@@ -49,6 +49,7 @@ export interface GuildChannel {
   type?: number;
   position?: number;
   parent_id?: string | null;
+  last_message_id?: string | null;
   permission_overwrites?: ChannelOverwrite[];
 }
 
