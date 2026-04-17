@@ -23,14 +23,6 @@ const commands = [
           { name: 'name', type: 3, description: 'チャンネル名', required: true },
         ],
       },
-      {
-        name: 'claim',
-        type: 1,
-        description: '[admin] 既存chにオーナーを割り当て',
-        options: [
-          { name: 'user', type: 6, description: 'オーナー', required: true },
-        ],
-      },
     ],
   },
   {

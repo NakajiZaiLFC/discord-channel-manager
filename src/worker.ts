@@ -1,5 +1,5 @@
 import { verifySignature } from './verify.js';
-import { handleCreate, handleClaim, handleMove, handleMoveSelect, handleHelp } from './commands.js';
+import { handleCreate, handleMove, handleMoveSelect, handleHelp } from './commands.js';
 import { messages } from './messages.js';
 
 interface Env {
@@ -43,7 +43,6 @@ export default {
           case 'channel':
             switch (sub) {
               case 'create': response = await handleCreate(interaction, env); break;
-              case 'claim':  response = await handleClaim(interaction, env); break;
               default:       response = ephemeral(messages.unknownCommand());
             }
             break;

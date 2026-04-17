@@ -72,25 +72,6 @@ export async function handleCreate(
   return ephemeral(messages.createSuccess(`<#${created.id}>`));
 }
 
-// --- /channel claim ---
-
-export async function handleClaim(
-  interaction: any,
-  env: Env,
-): Promise<InteractionResponse> {
-  if (!isAdmin(interaction.member.roles, env.ADMIN_ROLE_IDS)) {
-    return ephemeral(messages.claimNotAdmin());
-  }
-
-  const target = getOption(interaction, 'user');
-  if (!target) return ephemeral(messages.claimNoUser());
-
-  const channelId: string = interaction.channel_id;
-  await addPermissionOverride(env.DISCORD_TOKEN, channelId, target);
-
-  return ephemeral(messages.claimSuccess(`<#${channelId}>`, `<@${target}>`));
-}
-
 // --- /move → セレクトメニュー表示 ---
 
 export async function handleMove(
@@ -153,7 +134,6 @@ export function handleHelp(): InteractionResponse {
   return ephemeral(
     '📖 **コマンド一覧**\n\n' +
     '`/channel create <name>` — 新しいチャンネルを作成（1人1ch）\n' +
-    '`/channel claim <@user>` — [admin] 既存chにオーナーを割り当て\n' +
     '`/move` — このチャンネルのカテゴリを移動\n' +
     '`/help` — このヘルプを表示',
   );
