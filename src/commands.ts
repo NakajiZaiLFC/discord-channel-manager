@@ -191,10 +191,7 @@ export async function handleInactive(
   const inactive: Array<{ channel: GuildChannel; lastActivity: number | null }> = [];
 
   for (const ch of textChannels) {
-    if (!ch.last_message_id) {
-      inactive.push({ channel: ch, lastActivity: null });
-      continue;
-    }
+    if (!ch.last_message_id) continue; // 発言なしは除外
     const ts = snowflakeToTimestamp(ch.last_message_id);
     if (ts < cutoff) {
       inactive.push({ channel: ch, lastActivity: ts });
