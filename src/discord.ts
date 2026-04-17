@@ -43,10 +43,26 @@ interface ChannelOverwrite {
   allow: string;
 }
 
-interface GuildChannel {
+export interface GuildChannel {
   id: string;
+  name?: string;
+  type?: number;
+  position?: number;
   parent_id?: string | null;
   permission_overwrites?: ChannelOverwrite[];
+}
+
+export async function patchChannel(
+  token: string,
+  channelId: string,
+  body: { parent_id?: string; name?: string; position?: number },
+): Promise<void> {
+  const res = await fetch(`${BASE}/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: headers(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Discord API ${res.status}: ${await res.text()}`);
 }
 
 export async function getGuildChannels(

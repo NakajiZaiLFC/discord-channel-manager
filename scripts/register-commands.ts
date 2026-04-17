@@ -33,6 +33,14 @@ const commands = [
       },
     ],
   },
+  {
+    name: 'move',
+    description: 'このチャンネルのカテゴリを移動',
+  },
+  {
+    name: 'help',
+    description: 'コマンド一覧を表示',
+  },
 ];
 
 const url = `https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_ID}/commands`;
