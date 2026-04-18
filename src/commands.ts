@@ -10,7 +10,12 @@ interface Env {
 
 interface InteractionResponse {
   type: number;
-  data?: { content: string; flags?: number; components?: any[] };
+  data?: {
+    content?: string;
+    flags?: number;
+    components?: any[];
+    choices?: Array<{ name: string; value: string | number }>;
+  };
 }
 
 function ephemeral(content: string, components?: any[]): InteractionResponse {
@@ -19,10 +24,6 @@ function ephemeral(content: string, components?: any[]): InteractionResponse {
 
 function publicMsg(content: string): InteractionResponse {
   return { type: 4, data: { content } };
-}
-
-function updateMessage(content: string): InteractionResponse {
-  return { type: 7, data: { content, components: [] } };
 }
 
 function getOption(interaction: any, name: string): string | undefined {
@@ -93,9 +94,9 @@ export async function handleCreate(
   return ephemeral(messages.createSuccess(`<#${created.id}>`));
 }
 
-// --- /move → セレクトメニュー表示 ---
+// --- /move <category> autocomplete サジェスト ---
 
-export async function handleMove(
+export async function handleMoveAutocomplete(
   interaction: any,
   env: Env,
 ): Promise<InteractionResponse> {
@@ -104,46 +105,44 @@ export async function handleMove(
     .filter(c => c.type === GUILD_CATEGORY)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  if (categories.length === 0) {
-    return ephemeral('カテゴリが見つかりません');
-  }
+  const focused = (interaction.data?.options ?? []).find((o: any) => o.focused);
+  const query = String(focused?.value ?? '').toLowerCase();
 
-  const options = categories.slice(0, 25).map(c => ({
-    label: c.name ?? '(名前なし)',
-    value: c.id,
-  }));
+  const filtered = categories
+    .filter(c => !query || (c.name ?? '').toLowerCase().includes(query))
+    .slice(0, 25)
+    .map(c => ({
+      name: (c.name ?? '(名前なし)').slice(0, 100),
+      value: c.id,
+    }));
 
-  return ephemeral('📁 移動先のカテゴリを選択してください', [
-    {
-      type: 1,
-      components: [
-        {
-          type: 3,
-          custom_id: 'move-category',
-          placeholder: 'カテゴリを選択',
-          options,
-        },
-      ],
-    },
-  ]);
+  return {
+    type: 8, // APPLICATION_COMMAND_AUTOCOMPLETE_RESULT
+    data: { choices: filtered },
+  };
 }
 
-// --- セレクト選択後の処理 ---
+// --- /move 実行（autocomplete で選んだID または ユーザーが直接入力した文字） ---
 
-export async function handleMoveSelect(
+export async function handleMove(
   interaction: any,
   env: Env,
 ): Promise<InteractionResponse> {
-  const selectedId: string = interaction.data?.values?.[0];
-  if (!selectedId) return updateMessage('❌ 選択が無効です');
+  const categoryId = (interaction.data?.options ?? []).find((o: any) => o.name === 'category')?.value;
+  if (!categoryId) return ephemeral('❌ カテゴリが指定されていません');
+
+  if (!/^\d{15,25}$/.test(String(categoryId))) {
+    return ephemeral('❌ カテゴリ名を候補から選択してください');
+  }
+
+  const channels = await getGuildChannels(env.DISCORD_TOKEN, env.GUILD_ID);
+  const target = channels.find(c => c.id === categoryId && c.type === GUILD_CATEGORY);
+  if (!target) return ephemeral('❌ 指定されたカテゴリが見つかりません');
 
   const channelId: string = interaction.channel_id;
-  const channels = await getGuildChannels(env.DISCORD_TOKEN, env.GUILD_ID);
-  const target = channels.find(c => c.id === selectedId);
+  await patchChannel(env.DISCORD_TOKEN, channelId, { parent_id: String(categoryId) });
 
-  await patchChannel(env.DISCORD_TOKEN, channelId, { parent_id: selectedId });
-
-  return updateMessage(`✅ カテゴリを「${target?.name ?? selectedId}」に移動しました`);
+  return ephemeral(`✅ カテゴリを「${target.name}」に移動しました`);
 }
 
 // --- /stats ---

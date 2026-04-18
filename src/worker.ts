@@ -1,5 +1,5 @@
 import { verifySignature } from './verify.js';
-import { handleCreate, handleMove, handleMoveSelect, handleStats, handleInactive, handleHelp } from './commands.js';
+import { handleCreate, handleMove, handleMoveAutocomplete, handleStats, handleInactive, handleHelp } from './commands.js';
 import { messages } from './messages.js';
 
 interface Env {
@@ -69,24 +69,17 @@ export default {
       }
     }
 
-    // MESSAGE_COMPONENT (セレクトメニュー等)
-    if (interaction.type === 3) {
+    // APPLICATION_COMMAND_AUTOCOMPLETE
+    if (interaction.type === 4) {
       try {
-        const customId = interaction.data?.custom_id;
-        let response;
-
-        switch (customId) {
-          case 'move-category':
-            response = await handleMoveSelect(interaction, env);
-            break;
-          default:
-            response = { type: 7, data: { content: '❌ 不明な操作です', components: [] } };
+        const command = interaction.data?.name;
+        if (command === 'move') {
+          return json(await handleMoveAutocomplete(interaction, env));
         }
-
-        return json(response);
+        return json({ type: 8, data: { choices: [] } });
       } catch (e) {
-        console.error('[worker] component error:', e);
-        return json({ type: 7, data: { content: messages.internalError(), components: [] } });
+        console.error('[worker] autocomplete error:', e);
+        return json({ type: 8, data: { choices: [] } });
       }
     }
 
