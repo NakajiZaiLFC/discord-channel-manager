@@ -36,21 +36,19 @@ export default {
     if (interaction.type === 2) {
       try {
         const command = interaction.data?.name;
-        const sub = interaction.data?.options?.[0]?.name;
         let response;
 
         switch (command) {
-          case 'channel':
-            switch (sub) {
-              case 'create': response = await handleCreate(interaction, env); break;
-              case 'claim':  response = await handleClaim(interaction, env); break;
-              default:       response = ephemeral(messages.unknownCommand());
-            }
+          case 'marvin-create':
+            response = await handleCreate(interaction, env);
             break;
-          case 'move':
+          case 'marvin-claim':
+            response = await handleClaim(interaction, env);
+            break;
+          case 'marvin-move':
             response = await handleMove(interaction, env);
             break;
-          case 'help':
+          case 'marvin-help':
             response = handleHelp();
             break;
           default:

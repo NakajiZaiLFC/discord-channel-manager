@@ -12,33 +12,25 @@ if (!APP_ID || !GUILD_ID || !TOKEN) {
 
 const commands = [
   {
-    name: 'channel',
-    description: 'チャンネル管理',
+    name: 'marvin-create',
+    description: '新しいチャンネルを作成',
     options: [
-      {
-        name: 'create',
-        type: 1,
-        description: '新しいチャンネルを作成',
-        options: [
-          { name: 'name', type: 3, description: 'チャンネル名', required: true },
-        ],
-      },
-      {
-        name: 'claim',
-        type: 1,
-        description: '[admin] 既存chにオーナーを割り当て',
-        options: [
-          { name: 'user', type: 6, description: 'オーナー', required: true },
-        ],
-      },
+      { name: 'name', type: 3, description: 'チャンネル名', required: true },
     ],
   },
   {
-    name: 'move',
+    name: 'marvin-claim',
+    description: '[admin] 既存chにオーナーを割り当て',
+    options: [
+      { name: 'user', type: 6, description: 'オーナー', required: true },
+    ],
+  },
+  {
+    name: 'marvin-move',
     description: 'このチャンネルのカテゴリを移動',
   },
   {
-    name: 'help',
+    name: 'marvin-help',
     description: 'コマンド一覧を表示',
   },
 ];

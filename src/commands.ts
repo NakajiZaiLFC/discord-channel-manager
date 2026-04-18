@@ -10,7 +10,7 @@ interface Env {
 
 interface InteractionResponse {
   type: number;
-  data?: { content: string; flags?: number; components?: any[] };
+  data?: { content?: string; flags?: number; components?: any[] };
 }
 
 function ephemeral(content: string, components?: any[]): InteractionResponse {
@@ -22,9 +22,7 @@ function updateMessage(content: string): InteractionResponse {
 }
 
 function getOption(interaction: any, name: string): string | undefined {
-  return interaction.data?.options?.[0]?.options?.find(
-    (o: any) => o.name === name,
-  )?.value;
+  return interaction.data?.options?.find((o: any) => o.name === name)?.value;
 }
 
 function isAdmin(memberRoles: string[], adminRoleIds: string): boolean {
@@ -35,7 +33,7 @@ function isAdmin(memberRoles: string[], adminRoleIds: string): boolean {
 const MANAGE_CHANNELS = BigInt(0x10);
 const GUILD_CATEGORY = 4;
 
-// --- /channel create ---
+// --- /marvin-create ---
 
 export async function handleCreate(
   interaction: any,
@@ -72,7 +70,7 @@ export async function handleCreate(
   return ephemeral(messages.createSuccess(`<#${created.id}>`));
 }
 
-// --- /channel claim ---
+// --- /marvin-claim ---
 
 export async function handleClaim(
   interaction: any,
@@ -91,7 +89,7 @@ export async function handleClaim(
   return ephemeral(messages.claimSuccess(`<#${channelId}>`, `<@${target}>`));
 }
 
-// --- /move → セレクトメニュー表示 ---
+// --- /marvin-move → セレクトメニュー表示 ---
 
 export async function handleMove(
   interaction: any,
@@ -147,14 +145,14 @@ export async function handleMoveSelect(
   return updateMessage(`✅ カテゴリを「${target?.name ?? selectedId}」に移動しました`);
 }
 
-// --- /help ---
+// --- /marvin-help ---
 
 export function handleHelp(): InteractionResponse {
   return ephemeral(
     '📖 **コマンド一覧**\n\n' +
-    '`/channel create <name>` — 新しいチャンネルを作成（1人1ch）\n' +
-    '`/channel claim <@user>` — [admin] 既存chにオーナーを割り当て\n' +
-    '`/move` — このチャンネルのカテゴリを移動\n' +
-    '`/help` — このヘルプを表示',
+    '`/marvin-create <name>` — 新しいチャンネルを作成（1人1ch）\n' +
+    '`/marvin-claim <@user>` — [admin] 既存chにオーナーを割り当て\n' +
+    '`/marvin-move` — このチャンネルのカテゴリを移動\n' +
+    '`/marvin-help` — このヘルプを表示',
   );
 }
