@@ -28,6 +28,15 @@ const commands = [
   {
     name: 'marvin-move',
     description: 'このチャンネルのカテゴリを移動',
+    options: [
+      {
+        name: 'category',
+        type: 3,
+        description: '移動先のカテゴリ名（候補から選択）',
+        required: true,
+        autocomplete: true,
+      },
+    ],
   },
   {
     name: 'marvin-help',
